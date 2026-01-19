@@ -37,7 +37,10 @@ function pushEvent(name, data) {
         useChrome: false,
         headless: true,
         logQR: false,
-        autoClose: 0,  // Disable auto-close; keep browser open indefinitely
+        qrTimeout: 0,                          // No QR timeout (wait indefinitely for scan)
+        waitForLogin: false,                   // Don't auto-close after wapi.js loads
+        disableWelcome: true,                  // Skip the welcome screen navigation
+        autoClose: 9999999,                    // Very large timeout instead of 0 (v1.37.9 bug workaround)
         catchQR: (base64Qr, asciiQR) => {
           // Validate QR before storing
           if (base64Qr && typeof base64Qr === 'string' && base64Qr.startsWith('data:')) {
@@ -349,7 +352,10 @@ app.get('/generate-qr', async (req, res) => {
       useChrome: false,
       headless: true,
       logQR: false,
-      autoClose: 0,  // Disable auto-close for QR generation
+      qrTimeout: 0,                          // No QR timeout (wait indefinitely for scan)
+      waitForLogin: false,                   // Don't auto-close after wapi.js loads
+      disableWelcome: true,                  // Skip the welcome screen navigation
+      autoClose: 9999999,                    // Very large timeout instead of 0 (v1.37.9 bug workaround)
       catchQR: (base64Qr, asciiQR) => {
         if (!responded) {
           responded = true;
@@ -381,7 +387,9 @@ app.get('/generate-qr', async (req, res) => {
           '--disable-preconnect',
           '--disable-blink-features=AutomationControlled',
           '--disable-web-security'
-        ]
+        ],
+        ignoreHTTPSErrors: true,
+        timeout: 60000
       }
     });
 
