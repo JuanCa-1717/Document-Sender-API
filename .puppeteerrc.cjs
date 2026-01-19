@@ -2,10 +2,9 @@
  * @type {import("puppeteer").Configuration}
  */
 module.exports = {
-  // Use system-wide cache for Chromium
-  cacheDirectory: process.env.PUPPETEER_CACHE_DIR || '/opt/render/.cache/puppeteer',
-  // Skip download during npm install; do it explicitly in build
-  skipDownload: false,
-  // Use Chrome if available, fallback to Chromium
+  // Use Chromium from system in Render (via PUPPETEER_EXECUTABLE_PATH)
+  // Or fallback to Puppeteer's downloaded version locally
   executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+  // Cache directory for downloads (local dev only)
+  cacheDirectory: process.env.PUPPETEER_CACHE_DIR || './.cache/puppeteer',
 };
