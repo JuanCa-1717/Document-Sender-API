@@ -46,7 +46,19 @@ function pushEvent(name, data) {
           } catch (e) {}
         },
         puppeteerOptions: {
-          args: ['--no-sandbox', '--disable-setuid-sandbox']
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',        // Reduce memory usage
+            '--disable-gpu',                   // Disable GPU
+            '--single-process',                // Run in single process (less memory)
+            '--no-first-run',
+            '--no-default-browser-check',
+            '--disable-extensions',
+            '--disable-plugins',
+            '--disable-default-apps',
+            '--disable-preconnect'
+          ]
         }
       };
 
@@ -300,7 +312,21 @@ app.get('/generate-qr', async (req, res) => {
           try { if (asciiQR) qrcodeTerm.generate(asciiQR, { small: true }); } catch (e) {}
         }
       },
-      puppeteerOptions: { args: ['--no-sandbox', '--disable-setuid-sandbox'] }
+      puppeteerOptions: {
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--single-process',
+          '--no-first-run',
+          '--no-default-browser-check',
+          '--disable-extensions',
+          '--disable-plugins',
+          '--disable-default-apps',
+          '--disable-preconnect'
+        ]
+      }
     });
 
     tempClients[sessionName] = tmp;
