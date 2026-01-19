@@ -98,6 +98,58 @@ async function requestQR() {
       connectBtn.style.display = 'none';
     } else {
       console.error('No QR in response:', genData);
+      statusEl.textContent = 'Esperando código QR...';
+      // Start polling for QR
+      pollForQR();
+    }
+  } catch (err) {
+    console.error('Error requesting QR:', err);
+    statusEl.textContent = 'Error solicitando QR: ' + err.message;
+    isGeneratingQR = false;
+    connectBtn.disabled = false;
+    connectBtn.style.opacity = '1';
+  }
+}
+
+async function pollForQR() {
+  console.log('Starting QR polling...');
+  let attempts = 0;
+  const maxAttempts = 60; // ~2 minutes with 2s interval
+  
+  const pollInterval = setInterval(async () => {
+    attempts++;
+    try {
+      const res = await fetch('/qr');
+      const data = await res.json();
+      
+      if (data.qr && data.qr.startsWith('data:')) {
+        console.log(`✓ QR found after ${attempts} attempts`);
+        displayQr(data.qr);
+        statusEl.textContent = 'Escanea el código QR con WhatsApp';
+        clearInterval(pollInterval);
+        isGeneratingQR = false;
+      } else if (attempts >= maxAttempts) {
+        console.error('QR polling timeout');
+        statusEl.textContent = 'Timeout esperando QR. Intenta de nuevo.';
+        clearInterval(pollInterval);
+        isGeneratingQR = false;
+        connectBtn.disabled = false;
+        connectBtn.style.opacity = '1';
+      } else {
+        console.log(`Polling... (attempt ${attempts}/${maxAttempts})`);
+      }
+    } catch (err) {
+      console.error('Poll error:', err);
+      if (attempts >= maxAttempts) {
+        clearInterval(pollInterval);
+        statusEl.textContent = 'Error en polling: ' + err.message;
+        isGeneratingQR = false;
+        connectBtn.disabled = false;
+        connectBtn.style.opacity = '1';
+      }
+    }
+  }, 2000); // Poll every 2 seconds
+}
       statusEl.textContent = 'Error: ' + (genData.error || 'No se pudo generar el QR') + '. Intenta nuevamente.';
       connectBtn.disabled = false;
       connectBtn.style.opacity = '1';

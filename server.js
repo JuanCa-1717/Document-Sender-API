@@ -269,6 +269,24 @@ app.get('/status', (req, res) => {
   const lastEvent = lastEvents.length ? lastEvents[lastEvents.length - 1] : null;
   res.json({ ready: clientReady, lastState, lastQr: !!lastQr, lastEvent });
 });
+
+app.get('/qr', async (req, res) => {
+  // Return QR if available
+  if (lastQr && lastQr.startsWith('data:')) {
+    return res.json({ qr: lastQr, status: 'valid', ready: clientReady });
+  }
+  
+  // If no QR cached, try to generate one
+  if (!clientReady && !isGeneratingQR) {
+    console.log('No cached QR, attempting to generate...');
+    // Trigger QR generation in the background but don't wait
+    isGeneratingQR = true;
+    initializeClient().catch(err => console.error('Background QR generation error:', err));
+  }
+  
+  res.json({ qr: null, status: 'waiting', ready: clientReady, message: 'Waiting for QR generation' });
+});
+
 app.get('/debug', (req, res) => res.json({ ready: clientReady, lastState, lastQr: !!lastQr, events: lastEvents }));
 
 app.post('/send', upload.single('file'), async (req, res) => {
