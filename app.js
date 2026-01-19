@@ -11,7 +11,10 @@ const app = express();
 app.use(express.json());
 
 const sessions = new Map(); // clientId -> { sock, qr, status, authState }
-const sessionsDir = path.join(__dirname, 'sessions');
+// Usar disco persistente de Render si está disponible, sino usar local
+const sessionsDir = process.env.NODE_ENV === 'production' && fs.existsSync('/data') 
+  ? '/data/sessions' 
+  : path.join(__dirname, 'sessions');
 if (!fs.existsSync(sessionsDir)) fs.mkdirSync(sessionsDir, { recursive: true });
 
 // Logger silencioso

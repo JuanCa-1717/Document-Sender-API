@@ -9,5 +9,9 @@ services:
         value: production
       - key: PORT
         value: 10000
+    disk:
+      name: whatsapp-sessions
+      mountPath: /data
+      sizeGB: 1
 
 
