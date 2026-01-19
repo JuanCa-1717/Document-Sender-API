@@ -1,33 +1,22 @@
-FROM node:18-bullseye
-
-# Install Chromium and dependencies
-RUN apt-get update && apt-get install -y \
-    chromium \
-    chromium-common \
-    libxss1 \
-    --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/*
+FROM node:18-alpine
 
 # Set working directory
-WORKDIR /opt/render/project/src
+WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
-COPY .puppeteerrc.cjs ./
 
 # Install dependencies
-RUN npm ci --prefer-offline --no-audit
+RUN npm ci --only=production --prefer-offline --no-audit
 
 # Copy app code
 COPY . .
 
-# Expose port
-EXPOSE 10000
+# Expose port (Render usa 10000, pero se configura con ENV)
+EXPOSE ${PORT:-3000}
 
 # Set environment variables
 ENV NODE_ENV=production
-ENV PORT=10000
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Only start server.js (web UI with QR), not index.js (standalone script)
-CMD ["node", "server.js"]
+# Start API
+CMD ["node", "app.js"]

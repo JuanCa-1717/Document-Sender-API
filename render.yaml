@@ -1,23 +1,13 @@
 services:
   - type: web
-    name: whatsapp-doc-sender
+    name: whatsapp-doc-sender-api
     runtime: node
-    buildCommand: npx puppeteer browsers install chrome && npm ci --prefer-offline --no-audit
-    startCommand: node server.js
+    buildCommand: npm ci --only=production
+    startCommand: node app.js
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 10000
-      - key: PUPPETEER_CACHE_DIR
-        value: /opt/render/.cache/puppeteer
-      - key: PUPPETEER_SKIP_DOWNLOAD
-        value: "false"
-      - key: npm_config_fetch_timeout
-        value: "120000"
-      - key: npm_config_fetch_retry_mintimeout
-        value: "20000"
-      - key: npm_config_fetch_retry_maxtimeout
-        value: "120000"
 
 
