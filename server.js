@@ -305,9 +305,10 @@ app.post('/send-multiple', upload.array('files'), async (req, res) => {
 // (send-url endpoint removed to revert to original behavior)
 
 const port = process.env.PORT || 3333;
-app.listen(port, () => {
-  const baseUrl = process.env.RENDER_EXTERNAL_URL || ('http://localhost:' + port);
-  console.log('Server listening on ' + baseUrl);
+const host = process.env.HOST || '0.0.0.0';
+app.listen(port, host, () => {
+  const baseUrl = process.env.RENDER_EXTERNAL_URL || (`http://localhost:${port}`);
+  console.log(`Server listening on ${baseUrl} (bound to ${host}:${port})`);
 });
 
 // Temporary clients map (to allow generating extra QR codes for new sessions)
