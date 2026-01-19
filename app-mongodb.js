@@ -24,7 +24,12 @@ let sessionsCollection;
 // Conectar a MongoDB
 async function connectMongoDB() {
   try {
-    mongoClient = new MongoClient(MONGODB_URL);
+    mongoClient = new MongoClient(MONGODB_URL, {
+      tls: true,
+      tlsAllowInvalidCertificates: false,
+      serverSelectionTimeoutMS: 10000,
+      socketTimeoutMS: 45000,
+    });
     await mongoClient.connect();
     const db = mongoClient.db(DB_NAME);
     sessionsCollection = db.collection('sessions');
