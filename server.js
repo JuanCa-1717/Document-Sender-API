@@ -356,8 +356,16 @@ app.get('/generate-qr', async (req, res) => {
         if (!responded) {
           responded = true;
           if (base64Qr && typeof base64Qr === 'string' && base64Qr.startsWith('data:')) {
-            pushEvent('temp-catchQR', { session: sessionName, valid: true });
-            console.log(`✓ Temp QR captured: ${(base64Qr.length / 1024).toFixed(2)} KB`);
+            // Validate QR length (should be > 500 bytes typically)
+            const qrSize = base64Qr.length;
+            if (qrSize < 500) {
+              console.warn(`⚠ QR too small: ${qrSize} bytes (truncated?)`);
+              pushEvent('temp-catchQR', { session: sessionName, valid: false, reason: 'too_small', size: qrSize });
+              try { res.json({ ok: false, error: 'QR appears truncated' }); } catch (e) {}
+              return;
+            }
+            pushEvent('temp-catchQR', { session: sessionName, valid: true, size: qrSize });
+            console.log(`✓ Temp QR captured: ${(qrSize / 1024).toFixed(2)} KB`);
             try { res.json({ ok: true, session: sessionName, qr: base64Qr }); } catch (e) {}
           } else {
             pushEvent('temp-catchQR', { session: sessionName, valid: false });

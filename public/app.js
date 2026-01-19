@@ -77,6 +77,12 @@ async function fetchQr() {
         const genRes = await fetch('/generate-qr');
         const genData = await genRes.json();
         if (genData.ok && genData.qr) {
+          console.log(`✓ QR received: ${genData.qr.length} bytes`);
+          if (genData.qr.length < 500) {
+            console.error('⚠ QR appears truncated:', genData.qr.length, 'bytes');
+            qrEl.innerHTML = '<p style="color:red">Error: QR truncado. Reintentando...</p>';
+            return;
+          }
           displayQr(genData.qr);
           return;
         }
@@ -89,6 +95,7 @@ async function fetchQr() {
     
     // Display cached QR
     if (data.qr) {
+      console.log(`✓ QR from cache: ${data.qr.length} bytes`);
       displayQr(data.qr);
     } else {
       qrEl.innerHTML = '';
@@ -103,11 +110,13 @@ function displayQr(qrData) {
   if (typeof qrData === 'string' && qrData.startsWith('data:')) {
     const img = document.createElement('img');
     img.src = qrData;
-    img.style.width = '260px';
-    img.style.height = '260px';
+    img.style.width = '350px';
+    img.style.height = '350px';
+    img.style.border = '1px solid #ccc';
+    img.style.padding = '10px';
     qrEl.appendChild(img);
   } else {
-    qrRenderer = new QRCode(qrEl, { text: qrData, width: 260, height: 260 });
+    qrRenderer = new QRCode(qrEl, { text: qrData, width: 350, height: 350 });
   }
 }
 async function init() {
