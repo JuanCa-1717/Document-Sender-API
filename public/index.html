@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WhatsApp Doc Sender</title>
+    <style>
+      body { font-family: Arial, sans-serif; max-width: 720px; margin: 24px auto; padding: 0 12px; }
+      label { display:block; margin-top:8px }
+      input, textarea { width:100%; padding:8px; box-sizing:border-box }
+      #qr { margin-top:12px }
+      #status { margin-top:8px; font-weight:600 }
+    </style>
+  </head>
+  <body>
+    <h1>WhatsApp Doc Sender</h1>
+
+    <div id="qr-only" style="margin-top:18px; text-align:center">
+      <div id="status">Conectando...</div>
+      <div id="qr" style="margin-top:12px; display:inline-block"></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>
