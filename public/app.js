@@ -80,31 +80,36 @@ async function requestQR() {
   
   hasConnected = true;
   isGeneratingQR = true;
-  statusEl.textContent = 'Solicitando código QR...';
+  statusEl.textContent = 'Iniciando conexión...';
   connectBtn.disabled = true;
   connectBtn.style.opacity = '0.5';
   
   try {
-    console.log('Calling /generate-qr...');
+    console.log('🔍 Requesting QR generation...');
+    
+    // Call /generate-qr to trigger client initialization
     const genRes = await fetch('/generate-qr');
-    console.log('Response status:', genRes.status);
     const genData = await genRes.json();
-    console.log('Response data:', genData);
+    console.log('📥 /generate-qr response:', genData);
     
     if (genData.ok && genData.qr) {
-      console.log(`✓ QR received: ${genData.qr.length} bytes`);
+      console.log(`✓ QR received immediately: ${genData.qr.length} bytes`);
       displayQr(genData.qr);
       statusEl.textContent = 'Escanea el código QR con WhatsApp';
       connectBtn.style.display = 'none';
+    } else if (genData.ready) {
+      console.log('✓ Already connected!');
+      statusEl.textContent = 'Conexión establecida ✓';
+      connectBtn.style.display = 'none';
+      isGeneratingQR = false;
     } else {
-      console.error('No QR in response:', genData);
-      statusEl.textContent = 'Esperando código QR...';
-      // Start polling for QR
+      console.log('QR not ready yet, starting polling...');
+      statusEl.textContent = 'Generando código QR...';
       pollForQR();
     }
   } catch (err) {
-    console.error('Error requesting QR:', err);
-    statusEl.textContent = 'Error solicitando QR: ' + err.message;
+    console.error('❌ Error requesting QR:', err);
+    statusEl.textContent = 'Error: ' + err.message;
     isGeneratingQR = false;
     connectBtn.disabled = false;
     connectBtn.style.opacity = '1';
@@ -112,9 +117,9 @@ async function requestQR() {
 }
 
 async function pollForQR() {
-  console.log('Starting QR polling...');
+  console.log('🔄 Starting QR polling...');
   let attempts = 0;
-  const maxAttempts = 60; // ~2 minutes with 2s interval
+  const maxAttempts = 120; // ~4 minutes with 2s interval
   
   const pollInterval = setInterval(async () => {
     attempts++;
@@ -123,23 +128,30 @@ async function pollForQR() {
       const data = await res.json();
       
       if (data.qr && data.qr.startsWith('data:')) {
-        console.log(`✓ QR found after ${attempts} attempts`);
+        console.log(`✓ QR found after ${attempts} attempts (${attempts * 2} seconds)`);
         displayQr(data.qr);
         statusEl.textContent = 'Escanea el código QR con WhatsApp';
         clearInterval(pollInterval);
         isGeneratingQR = false;
+      } else if (data.ready) {
+        console.log('✓ Connected while polling!');
+        statusEl.textContent = 'Conexión establecida ✓';
+        clearInterval(pollInterval);
+        isGeneratingQR = false;
+        connectBtn.style.display = 'none';
       } else if (attempts >= maxAttempts) {
-        console.error('QR polling timeout');
-        statusEl.textContent = 'Timeout esperando QR. Intenta de nuevo.';
+        console.error('❌ QR polling timeout after 4 minutes');
+        statusEl.textContent = 'Timeout generando QR. Por favor intenta de nuevo.';
         clearInterval(pollInterval);
         isGeneratingQR = false;
         connectBtn.disabled = false;
         connectBtn.style.opacity = '1';
-      } else {
-        console.log(`Polling... (attempt ${attempts}/${maxAttempts})`);
+      } else if (attempts % 10 === 0) {
+        console.log(`🔄 Polling... (attempt ${attempts}/${maxAttempts}, ${attempts * 2}s elapsed)`);
+        statusEl.textContent = `Generando código QR... (${attempts * 2}s)`;
       }
     } catch (err) {
-      console.error('Poll error:', err);
+      console.error('❌ Poll error:', err);
       if (attempts >= maxAttempts) {
         clearInterval(pollInterval);
         statusEl.textContent = 'Error en polling: ' + err.message;
