@@ -37,6 +37,7 @@ function pushEvent(name, data) {
         useChrome: false,
         headless: true,
         logQR: false,
+        autoClose: 0,  // Disable auto-close; keep browser open indefinitely
         catchQR: (base64Qr, asciiQR) => {
           // Validate QR before storing
           if (base64Qr && typeof base64Qr === 'string' && base64Qr.startsWith('data:')) {
@@ -325,6 +326,7 @@ app.get('/generate-qr', async (req, res) => {
       useChrome: false,
       headless: true,
       logQR: false,
+      autoClose: 0,  // Disable auto-close for QR generation
       catchQR: (base64Qr, asciiQR) => {
         if (!responded) {
           responded = true;
