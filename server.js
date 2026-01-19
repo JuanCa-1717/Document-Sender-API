@@ -32,12 +32,40 @@ let lastQr = null;
 let lastState = null;
 const lastEvents = [];
 let isInitializingClient = false;  // Flag to prevent concurrent client initialization
+let currentSessionName = null;     // Tracks the active session folder in /tokens
+const tokensDir = path.join(__dirname, 'tokens');
 
 function pushEvent(name, data) {
   const item = { name, data, time: new Date().toISOString() };
   lastEvents.push(item);
   if (lastEvents.length > 80) lastEvents.shift();
   console.log(name, data || '');
+}
+
+async function cleanupSession(reason) {
+  pushEvent('session-cleanup', { reason, session: currentSessionName });
+  try {
+    if (clientInstance && typeof clientInstance.close === 'function') {
+      await clientInstance.close();
+    }
+  } catch (e) {
+    console.warn('cleanupSession close error:', e.message);
+  }
+
+  clientInstance = null;
+  clientReady = false;
+  lastQr = null;
+  lastState = null;
+
+  if (currentSessionName) {
+    const sessionPath = path.join(tokensDir, currentSessionName);
+    try {
+      await fs.promises.rm(sessionPath, { recursive: true, force: true });
+      pushEvent('session-removed', sessionPath);
+    } catch (e) {
+      console.warn('cleanupSession rm error:', e.message);
+    }
+  }
 }
 
 // Function to create client (called on-demand when user clicks "Connect")
@@ -92,6 +120,7 @@ async function createClientWithFallback(baseSession) {
   };
 
   try {
+    currentSessionName = baseSession;
     return await wppconnect.create(baseOptions);
   } catch (err) {
     pushEvent('create-error', err && err.message);
@@ -102,6 +131,7 @@ async function createClientWithFallback(baseSession) {
       const alt = baseSession + '-' + Date.now();
       pushEvent('trying-fallback-session', alt);
       const altOptions = Object.assign({}, baseOptions, { session: alt });
+      currentSessionName = alt;
       return await wppconnect.create(altOptions);
     }
     
@@ -142,6 +172,7 @@ async function initializeClient() {
   try {
     const client = await createClientWithFallback('whatsapp-doc-sender');
     clientInstance = client;
+    if (!currentSessionName) currentSessionName = 'whatsapp-doc-sender';
 
     // Wait a moment for the page to stabilize before attaching listeners
     await new Promise(r => setTimeout(r, 2000));
@@ -176,8 +207,8 @@ async function initializeClient() {
       ready: () => { clientReady = true; pushEvent('ready'); },
       authenticated: (session) => pushEvent('authenticated', session),
       auth_success: () => { clientReady = true; pushEvent('auth_success'); },
-      auth_failure: (msg) => pushEvent('auth_failure', msg),
-      disconnected: (reason) => { clientReady = false; pushEvent('disconnected', reason); },
+      auth_failure: (msg) => { clientReady = false; pushEvent('auth_failure', msg); cleanupSession('auth_failure'); },
+      disconnected: (reason) => { clientReady = false; pushEvent('disconnected', reason); cleanupSession('disconnected'); },
       message: (msg) => pushEvent('message', msg),
       change_state: (state) => {
         lastState = state;
@@ -191,6 +222,7 @@ async function initializeClient() {
           } else if (s && typeof s === 'string' && (s.toUpperCase().includes('CLOSE') || s.toUpperCase().includes('DISCONNECT'))) {
             clientReady = false;
             pushEvent('clientReady', false);
+            cleanupSession('state-change-close');
           }
         } catch (e) {}
       }
@@ -476,5 +508,15 @@ app.get('/generate-qr', async (req, res) => {
     res.status(500).json({ error: err && err.message });
   } finally {
     isGeneratingQR = false;
+  }
+});
+
+// Manual logout endpoint to clear session and tokens
+app.post('/logout', async (req, res) => {
+  try {
+    await cleanupSession('manual-logout');
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
   }
 });
