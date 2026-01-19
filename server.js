@@ -338,10 +338,18 @@ app.listen(port, host, () => {
 
 // Temporary clients map (to allow generating extra QR codes for new sessions)
 const tempClients = {};
+let isGeneratingQR = false;  // Flag to prevent concurrent QR generation
 
 app.get('/generate-qr', async (req, res) => {
+  // Prevent concurrent QR generation requests
+  if (isGeneratingQR) {
+    pushEvent('generate-qr-blocked', 'Already generating QR');
+    return res.status(429).json({ error: 'QR generation already in progress, please wait' });
+  }
+  
   const sessionName = 'temp-' + Date.now();
   pushEvent('generate-qr-request', sessionName);
+  isGeneratingQR = true;
 
   try {
     let responded = false;
@@ -355,6 +363,8 @@ app.get('/generate-qr', async (req, res) => {
       catchQR: (base64Qr, asciiQR) => {
         if (!responded) {
           responded = true;
+          isGeneratingQR = false;  // Reset flag as soon as we get a response
+          
           if (base64Qr && typeof base64Qr === 'string' && base64Qr.startsWith('data:')) {
             // Validate QR length (should be > 500 bytes typically)
             const qrSize = base64Qr.length;
@@ -406,16 +416,17 @@ app.get('/generate-qr', async (req, res) => {
       tmp.on('disconnected', (r) => pushEvent('temp-disconnected', { session: sessionName, r }));
     }} catch (e) {}
 
-    // timeout: if no QR in 45s, respond with error and cleanup
+    // timeout: if no QR in 30s, respond with error and cleanup
     const to = setTimeout(() => {
       if (responded) return;
       responded = true;
+      isGeneratingQR = false;  // Reset flag on timeout
       try { if (typeof tmp.close === 'function') tmp.close(); } catch (e) {}
       delete tempClients[sessionName];
       try { res.status(500).json({ error: 'No QR generated within timeout' }); } catch (e) {}
-    }, 45000);
+    }, 30000);  // Reduced from 45s to 30s
 
-    // schedule cleanup after 10 minutes to avoid orphaning processes
+    // schedule aggressive cleanup after 2 minutes (reduced from 10 min)
     setTimeout(() => {
       try {
         if (tempClients[sessionName]) {
@@ -424,10 +435,12 @@ app.get('/generate-qr', async (req, res) => {
           pushEvent('temp-cleaned', sessionName);
         }
       } catch (e) {}
-    }, 10 * 60 * 1000);
+      isGeneratingQR = false;  // Reset flag after cleanup
+    }, 2 * 60 * 1000);  // Reduced from 10 min to 2 min
 
   } catch (err) {
     pushEvent('generate-qr-error', err && err.message);
+    isGeneratingQR = false;  // Reset flag on error
     res.status(500).json({ error: err && err.message });
   }
 });

@@ -4,6 +4,8 @@ const qrHelpEl = document.getElementById('qr-help');
 let qrRenderer = null;
 let prevReady = null;
 let lastEventSeenTime = null;
+let isGeneratingQR = false;  // Flag to prevent concurrent QR generation
+let qrGenerationAttempted = false;  // Flag to only try once
 
 function isDisconnectHint(lastEvent, lastState) {
   try {
@@ -70,26 +72,31 @@ async function fetchQr() {
     const res = await fetch('/qr');
     const data = await res.json();
     
-    // If no QR in cache, try to generate one
+    // If no QR in cache, try to generate one (but only once and not concurrently)
     if (!data.qr && data.status === 'waiting') {
+      if (isGeneratingQR || qrGenerationAttempted) {
+        // Already generating or already tried, just wait
+        return;
+      }
+      
       console.log('No QR in cache, generating fresh QR...');
+      isGeneratingQR = true;
+      qrGenerationAttempted = true;
+      
       try {
         const genRes = await fetch('/generate-qr');
         const genData = await genRes.json();
         if (genData.ok && genData.qr) {
           console.log(`✓ QR received: ${genData.qr.length} bytes`);
-          if (genData.qr.length < 500) {
-            console.error('⚠ QR appears truncated:', genData.qr.length, 'bytes');
-            qrEl.innerHTML = '<p style="color:red">Error: QR truncado. Reintentando...</p>';
-            return;
-          }
           displayQr(genData.qr);
-          return;
         }
       } catch (e) {
         console.warn('Failed to generate QR:', e);
+        // Allow retry after 30 seconds on failure
+        setTimeout(() => { qrGenerationAttempted = false; }, 30000);
+      } finally {
+        isGeneratingQR = false;
       }
-      qrEl.innerHTML = '';
       return;
     }
     
@@ -97,6 +104,8 @@ async function fetchQr() {
     if (data.qr) {
       console.log(`✓ QR from cache: ${data.qr.length} bytes`);
       displayQr(data.qr);
+      // Reset generation flag since we have a valid QR now
+      qrGenerationAttempted = false;
     } else {
       qrEl.innerHTML = '';
     }
