@@ -36,10 +36,11 @@ function pushEvent(name, data) {
         session: baseSession,
         useChrome: false,
         headless: true,
-        logQR: false,
+        logQR: true,                           // Enable QR logging for debugging
         qrTimeout: 0,                          // No QR timeout (wait indefinitely for scan)
         autoClose: 9999999,                    // Very large timeout instead of 0 (v1.37.9 bug workaround)
         catchQR: (base64Qr, asciiQR) => {
+          console.log('🔔 catchQR CALLED with:', { type: typeof base64Qr, length: base64Qr ? base64Qr.length : 0 });
           // Validate QR before storing
           if (base64Qr && typeof base64Qr === 'string' && base64Qr.startsWith('data:')) {
             lastQr = base64Qr;
@@ -130,9 +131,18 @@ function pushEvent(name, data) {
         pushEvent('clientReady-detected', connHints);
       }
     } catch (e) {}
+    
+    // Add extra debugging for QR capture
+    console.log('🔍 Client methods:', Object.keys(client || {}).filter(k => k.includes('qr') || k.includes('QR')));
+    console.log('🔍 Client has onQR:', typeof client.onQR);
+    console.log('🔍 Client has on:', typeof client.on);
 
     const handlers = {
-      qr: (qr) => { lastQr = qr; pushEvent('qr', qr); },
+      qr: (qr) => { 
+        console.log('🔔 qr event FIRED with:', { type: typeof qr, length: qr ? qr.length : 0 });
+        lastQr = qr; 
+        pushEvent('qr-event', qr); 
+      },
       ready: () => { clientReady = true; pushEvent('ready'); },
       authenticated: (session) => pushEvent('authenticated', session),
       auth_success: () => { clientReady = true; pushEvent('auth_success'); },
