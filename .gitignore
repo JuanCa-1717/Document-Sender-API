@@ -4,6 +4,13 @@ node_modules/
 uploads/
 tokens/
 
+# Puppeteer cache
+.cache/
+
+# Test files
+test.txt
+test-send.js
+
 # Environment variables
 .env
 .env.local
