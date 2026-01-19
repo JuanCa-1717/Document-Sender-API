@@ -46,7 +46,7 @@ async function createClientWithFallback(baseSession) {
     session: baseSession,
     useChrome: false,
     headless: true,
-    logQR: true,                           // Enable QR logging for debugging
+    logQR: false,                           // Disable verbose QR logging
     qrTimeout: 0,                          // No QR timeout (wait indefinitely for scan)
     autoClose: 9999999,                    // Very large timeout instead of 0 (v1.37.9 bug workaround)
     catchQR: (base64Qr, asciiQR) => {
@@ -235,16 +235,6 @@ app.use(express.json());
 app.get('/status', (req, res) => {
   const lastEvent = lastEvents.length ? lastEvents[lastEvents.length - 1] : null;
   res.json({ ready: clientReady, lastState, lastQr: !!lastQr, lastEvent });
-});
-app.get('/qr', async (req, res) => {
-  // If we already have a valid QR cached, return it immediately
-  if (lastQr && lastQr.startsWith('data:')) {
-    return res.json({ qr: lastQr, status: 'valid', source: 'cache' });
-  }
-  
-  // Otherwise, respond with "waiting" and let the browser call /generate-qr
-  console.log('No cached QR, waiting for generation...');
-  res.json({ qr: null, status: 'waiting', message: 'Call /generate-qr to get QR' });
 });
 app.get('/debug', (req, res) => res.json({ ready: clientReady, lastState, lastQr: !!lastQr, events: lastEvents }));
 
