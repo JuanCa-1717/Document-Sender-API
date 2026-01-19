@@ -272,19 +272,13 @@ app.get('/status', (req, res) => {
 });
 
 app.get('/qr', async (req, res) => {
-  // Return QR if available
+  // ONLY return cached QR, do NOT initiate anything
   if (lastQr && lastQr.startsWith('data:')) {
     return res.json({ qr: lastQr, status: 'valid', ready: clientReady });
   }
   
-  // If no QR and not ready, we need to generate one
-  if (!clientReady && !isGeneratingQR && !clientInstance) {
-    console.log('No QR available. Initiating client in background...');
-    // Start client initialization but don't wait
-    initializeClient().catch(err => console.error('Background client init error:', err));
-  }
-  
-  res.json({ qr: null, status: 'waiting', ready: clientReady, message: 'Waiting for QR generation' });
+  // If no QR available, just report waiting
+  res.json({ qr: null, status: 'waiting', ready: clientReady, message: 'No QR available. Call /generate-qr to start.' });
 });
 
 app.get('/debug', (req, res) => res.json({ ready: clientReady, lastState, lastQr: !!lastQr, events: lastEvents }));
@@ -457,6 +451,7 @@ app.get('/generate-qr', async (req, res) => {
     // Initialize the client if it doesn't exist
     console.log('🔍 Initializing client (if needed)...');
     await initializeClient();
+    
     // If initialization set us as ready, return early
     if (clientReady || (clientInstance && (clientInstance.isLogged || clientInstance.connected))) {
       pushEvent('generate-qr-skip', 'connected-after-init');
@@ -467,23 +462,6 @@ app.get('/generate-qr', async (req, res) => {
     console.log('🔍 Client instance exists:', !!clientInstance);
     console.log('🔍 Current lastQr:', lastQr ? `${lastQr.length} bytes` : 'null');
 
-    // Try to get QR from client directly if it has a getQrCode method
-    if (clientInstance && typeof clientInstance.getQrCode === 'function') {
-      try {
-        console.log('🔍 Attempting to call clientInstance.getQrCode()...');
-        const qrFromClient = await clientInstance.getQrCode();
-        if (qrFromClient && typeof qrFromClient === 'string' && qrFromClient.startsWith('data:')) {
-          lastQr = qrFromClient;
-          console.log('✓ Got QR directly from client:', qrFromClient.length, 'bytes');
-          return res.json({ ok: true, session: 'main', qr: qrFromClient, source: 'client-method' });
-        } else if (qrFromClient) {
-          console.log('⚠ getQrCode returned unexpected data');
-        }
-      } catch (e) {
-        console.warn('Failed to get QR from client method:', e.message);
-      }
-    }
-    
     // Wait up to 30 seconds for the main client to capture a QR via catchQR callback
     let attempts = 0;
     const maxAttempts = 60;  // 30 seconds with 500ms interval
@@ -492,24 +470,6 @@ app.get('/generate-qr', async (req, res) => {
     while (attempts < maxAttempts && !lastQr) {
       await new Promise(r => setTimeout(r, 500));
       attempts++;
-      
-      // After 15 seconds, try to take a screenshot and extract QR
-      if (attempts === 30 && !lastQr && clientInstance) {
-        console.log('⏱️  Timeout after 15s, attempting screenshot fallback...');
-        try {
-          // Try to get screenshot of the page
-          const screenshot = await clientInstance.page?.screenshot({ encoding: 'base64' });
-          if (screenshot) {
-            // For now, just save it as lastQr so we can see if page is loading
-            console.log('📷 Screenshot captured:', screenshot.length, 'bytes');
-            pushEvent('screenshot-fallback', { size: screenshot.length });
-            // Note: We would need qr-reader library to decode QR from image
-            // For now, this is just to verify the page is accessible
-          }
-        } catch (e) {
-          console.warn('Failed to take screenshot:', e.message);
-        }
-      }
       
       if (attempts % 10 === 0) {
         console.log(`🔍 Still waiting... (${attempts * 0.5}s elapsed, lastQr=${lastQr ? 'exists' : 'null'})`);
@@ -523,20 +483,9 @@ app.get('/generate-qr', async (req, res) => {
       return res.json({ ok: true, session: 'main', qr: lastQr, source: 'main-client' });
     } else {
       console.error('❌ Timeout: QR not captured after 30s. lastQr:', lastQr ? lastQr.slice(0, 100) : 'null');
-      console.error('⚠️  Possible causes: catchQR callback not fired, page not loaded, or WhatsApp Web not accessible');
       pushEvent('generate-qr-timeout', 'main client QR not available after 30s');
-      
-      // Try to provide useful error message
-      const clientInfo = {
-        instanceExists: !!clientInstance,
-        hasPage: !!clientInstance?.page,
-        hasGetQrCode: typeof clientInstance?.getQrCode === 'function'
-      };
-      console.error('Client debug info:', clientInfo);
-      
       return res.status(500).json({ 
         error: 'QR not available from main client after 30s', 
-        debug: clientInfo,
         hint: 'Check server logs - catchQR callback may not be firing'
       });
     }
