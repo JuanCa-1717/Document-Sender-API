@@ -1,1 +1,16 @@
 node_modules/
+
+# Sensitive runtime data
+uploads/
+tokens/
+
+# Environment variables
+.env
+.env.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
