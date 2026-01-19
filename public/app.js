@@ -69,22 +69,45 @@ async function fetchQr() {
   try {
     const res = await fetch('/qr');
     const data = await res.json();
-    if (data.qr) {
-      qrEl.innerHTML = '';
-      if (typeof data.qr === 'string' && data.qr.startsWith('data:')) {
-        const img = document.createElement('img');
-        img.src = data.qr;
-        img.style.width = '260px';
-        img.style.height = '260px';
-        qrEl.appendChild(img);
-      } else {
-        qrRenderer = new QRCode(qrEl, { text: data.qr, width: 260, height: 260 });
+    
+    // If no QR in cache, try to generate one
+    if (!data.qr && data.status === 'waiting') {
+      console.log('No QR in cache, generating fresh QR...');
+      try {
+        const genRes = await fetch('/generate-qr');
+        const genData = await genRes.json();
+        if (genData.ok && genData.qr) {
+          displayQr(genData.qr);
+          return;
+        }
+      } catch (e) {
+        console.warn('Failed to generate QR:', e);
       }
+      qrEl.innerHTML = '';
+      return;
+    }
+    
+    // Display cached QR
+    if (data.qr) {
+      displayQr(data.qr);
     } else {
       qrEl.innerHTML = '';
     }
   } catch (e) {
-    console.warn('No QR disponible yet');
+    console.warn('No QR disponible yet', e);
+  }
+}
+
+function displayQr(qrData) {
+  qrEl.innerHTML = '';
+  if (typeof qrData === 'string' && qrData.startsWith('data:')) {
+    const img = document.createElement('img');
+    img.src = qrData;
+    img.style.width = '260px';
+    img.style.height = '260px';
+    qrEl.appendChild(img);
+  } else {
+    qrRenderer = new QRCode(qrEl, { text: qrData, width: 260, height: 260 });
   }
 }
 async function init() {

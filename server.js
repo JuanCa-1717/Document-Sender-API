@@ -38,8 +38,6 @@ function pushEvent(name, data) {
         headless: true,
         logQR: false,
         qrTimeout: 0,                          // No QR timeout (wait indefinitely for scan)
-        waitForLogin: false,                   // Don't auto-close after wapi.js loads
-        disableWelcome: true,                  // Skip the welcome screen navigation
         autoClose: 9999999,                    // Very large timeout instead of 0 (v1.37.9 bug workaround)
         catchQR: (base64Qr, asciiQR) => {
           // Validate QR before storing
@@ -194,15 +192,15 @@ app.get('/status', (req, res) => {
   const lastEvent = lastEvents.length ? lastEvents[lastEvents.length - 1] : null;
   res.json({ ready: clientReady, lastState, lastQr: !!lastQr, lastEvent });
 });
-app.get('/qr', (req, res) => {
-  if (!lastQr) {
-    return res.json({ qr: null, status: 'waiting' });
+app.get('/qr', async (req, res) => {
+  // If we already have a valid QR cached, return it immediately
+  if (lastQr && lastQr.startsWith('data:')) {
+    return res.json({ qr: lastQr, status: 'valid', source: 'cache' });
   }
-  if (lastQr.startsWith('data:')) {
-    return res.json({ qr: lastQr, status: 'valid' });
-  }
-  console.warn('QR format warning:', lastQr.slice(0, 50));
-  res.json({ qr: null, status: 'invalid_format', debug: lastQr.slice(0, 50) });
+  
+  // Otherwise, respond with "waiting" and let the browser call /generate-qr
+  console.log('No cached QR, waiting for generation...');
+  res.json({ qr: null, status: 'waiting', message: 'Call /generate-qr to get QR' });
 });
 app.get('/debug', (req, res) => res.json({ ready: clientReady, lastState, lastQr: !!lastQr, events: lastEvents }));
 
@@ -353,8 +351,6 @@ app.get('/generate-qr', async (req, res) => {
       headless: true,
       logQR: false,
       qrTimeout: 0,                          // No QR timeout (wait indefinitely for scan)
-      waitForLogin: false,                   // Don't auto-close after wapi.js loads
-      disableWelcome: true,                  // Skip the welcome screen navigation
       autoClose: 9999999,                    // Very large timeout instead of 0 (v1.37.9 bug workaround)
       catchQR: (base64Qr, asciiQR) => {
         if (!responded) {
