@@ -85,26 +85,25 @@ async function requestQR() {
   connectBtn.style.opacity = '0.5';
   
   try {
+    console.log('Calling /generate-qr...');
     const genRes = await fetch('/generate-qr');
+    console.log('Response status:', genRes.status);
     const genData = await genRes.json();
+    console.log('Response data:', genData);
     
     if (genData.ok && genData.qr) {
       console.log(`✓ QR received: ${genData.qr.length} bytes`);
       displayQr(genData.qr);
       statusEl.textContent = 'Escanea el código QR con WhatsApp';
       connectBtn.style.display = 'none';
-      
-      // Start polling for status to detect when connected
-      if (!window.statusInterval) {
-        window.statusInterval = setInterval(fetchStatus, 3000);
-      }
     } else {
-      statusEl.textContent = 'Error: No se pudo generar el QR. Intenta nuevamente.';
+      console.error('No QR in response:', genData);
+      statusEl.textContent = 'Error: ' + (genData.error || 'No se pudo generar el QR') + '. Intenta nuevamente.';
       connectBtn.disabled = false;
       connectBtn.style.opacity = '1';
     }
   } catch (e) {
-    console.warn('Failed to request QR:', e);
+    console.error('Failed to request QR:', e);
     statusEl.textContent = 'Error al solicitar QR. Intenta nuevamente.';
     connectBtn.disabled = false;
     connectBtn.style.opacity = '1';

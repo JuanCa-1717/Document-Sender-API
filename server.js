@@ -359,25 +359,51 @@ app.listen(port, host, () => {
 let isGeneratingQR = false;  // Flag to prevent concurrent QR requests
 
 app.get('/generate-qr', async (req, res) => {
-  // Don't create a new client - just wait for the main client's QR
-  // The main client is already running and capturing QR codes
+  // Check if we already have a cached QR from the main client
+  if (lastQr && lastQr.startsWith('data:')) {
+    console.log('✓ Returning cached QR from main client');
+    return res.json({ ok: true, session: 'main', qr: lastQr, source: 'cached' });
+  }
   
-  if (isGeneratingQR && lastQr) {
-    // QR already available from main client
-    return res.json({ ok: true, session: 'main', qr: lastQr, source: 'main-client' });
+  if (isGeneratingQR) {
+    pushEvent('generate-qr-blocked', 'Already waiting for QR');
+    return res.status(429).json({ error: 'QR request already in progress' });
   }
   
   pushEvent('generate-qr-request', 'waiting-for-main-client-qr');
   isGeneratingQR = true;
+  
+  console.log('🔍 Waiting for main client to capture QR...');
+  console.log('🔍 Client instance exists:', !!clientInstance);
+  console.log('🔍 Current lastQr:', lastQr ? `${lastQr.length} bytes` : 'null');
 
   try {
-    // Wait up to 30 seconds for the main client to capture a QR
+    // Try to get QR from client directly if it has a getQrCode method
+    if (clientInstance && typeof clientInstance.getQrCode === 'function') {
+      try {
+        console.log('🔍 Attempting to call clientInstance.getQrCode()...');
+        const qrFromClient = await clientInstance.getQrCode();
+        if (qrFromClient) {
+          lastQr = qrFromClient;
+          console.log('✓ Got QR directly from client:', qrFromClient.length, 'bytes');
+          return res.json({ ok: true, session: 'main', qr: qrFromClient, source: 'client-method' });
+        }
+      } catch (e) {
+        console.warn('Failed to get QR from client method:', e.message);
+      }
+    }
+    
+    // Wait up to 30 seconds for the main client to capture a QR via catchQR callback
     let attempts = 0;
     const maxAttempts = 60;  // 30 seconds with 500ms interval
     
+    console.log('🔍 Polling lastQr for up to 30 seconds...');
     while (attempts < maxAttempts && !lastQr) {
       await new Promise(r => setTimeout(r, 500));
       attempts++;
+      if (attempts % 10 === 0) {
+        console.log(`🔍 Still waiting... (${attempts * 0.5}s elapsed, lastQr=${lastQr ? 'exists' : 'null'})`);
+      }
     }
     
     if (lastQr && lastQr.startsWith('data:')) {
@@ -386,10 +412,12 @@ app.get('/generate-qr', async (req, res) => {
       console.log(`✓ Returning main client QR: ${size} KB`);
       return res.json({ ok: true, session: 'main', qr: lastQr, source: 'main-client' });
     } else {
+      console.error('❌ Timeout: QR not captured after 30s. lastQr:', lastQr ? lastQr.slice(0, 100) : 'null');
       pushEvent('generate-qr-timeout', 'main client QR not available');
-      return res.status(500).json({ error: 'QR not available from main client' });
+      return res.status(500).json({ error: 'QR not available from main client after 30s. Check server logs for catchQR callback.' });
     }
   } catch (err) {
+    console.error('❌ Error in /generate-qr:', err);
     pushEvent('generate-qr-error', err && err.message);
     res.status(500).json({ error: err && err.message });
   } finally {
