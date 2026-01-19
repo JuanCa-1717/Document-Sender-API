@@ -336,111 +336,43 @@ app.listen(port, host, () => {
   console.log(`Server listening on ${baseUrl} (bound to ${host}:${port})`);
 });
 
-// Temporary clients map (to allow generating extra QR codes for new sessions)
-const tempClients = {};
-let isGeneratingQR = false;  // Flag to prevent concurrent QR generation
+let isGeneratingQR = false;  // Flag to prevent concurrent QR requests
 
 app.get('/generate-qr', async (req, res) => {
-  // Prevent concurrent QR generation requests
-  if (isGeneratingQR) {
-    pushEvent('generate-qr-blocked', 'Already generating QR');
-    return res.status(429).json({ error: 'QR generation already in progress, please wait' });
+  // Don't create a new client - just wait for the main client's QR
+  // The main client is already running and capturing QR codes
+  
+  if (isGeneratingQR && lastQr) {
+    // QR already available from main client
+    return res.json({ ok: true, session: 'main', qr: lastQr, source: 'main-client' });
   }
   
-  const sessionName = 'temp-' + Date.now();
-  pushEvent('generate-qr-request', sessionName);
+  pushEvent('generate-qr-request', 'waiting-for-main-client-qr');
   isGeneratingQR = true;
 
   try {
-    let responded = false;
-    const tmp = await wppconnect.create({
-      session: sessionName,
-      useChrome: false,
-      headless: true,
-      logQR: false,
-      qrTimeout: 0,                          // No QR timeout (wait indefinitely for scan)
-      autoClose: 9999999,                    // Very large timeout instead of 0 (v1.37.9 bug workaround)
-      catchQR: (base64Qr, asciiQR) => {
-        if (!responded) {
-          responded = true;
-          isGeneratingQR = false;  // Reset flag as soon as we get a response
-          
-          if (base64Qr && typeof base64Qr === 'string' && base64Qr.startsWith('data:')) {
-            // Validate QR length (should be > 500 bytes typically)
-            const qrSize = base64Qr.length;
-            if (qrSize < 500) {
-              console.warn(`⚠ QR too small: ${qrSize} bytes (truncated?)`);
-              pushEvent('temp-catchQR', { session: sessionName, valid: false, reason: 'too_small', size: qrSize });
-              try { res.json({ ok: false, error: 'QR appears truncated' }); } catch (e) {}
-              return;
-            }
-            pushEvent('temp-catchQR', { session: sessionName, valid: true, size: qrSize });
-            console.log(`✓ Temp QR captured: ${(qrSize / 1024).toFixed(2)} KB`);
-            try { res.json({ ok: true, session: sessionName, qr: base64Qr }); } catch (e) {}
-          } else {
-            pushEvent('temp-catchQR', { session: sessionName, valid: false });
-            console.warn('⚠ Temp QR invalid:', typeof base64Qr);
-            try { res.json({ ok: false, error: 'Invalid QR format' }); } catch (e) {}
-            return;
-          }
-          try { if (asciiQR) qrcodeTerm.generate(asciiQR, { small: true }); } catch (e) {}
-        }
-      },
-      puppeteerOptions: {
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-          '--single-process',
-          '--no-first-run',
-          '--no-default-browser-check',
-          '--disable-extensions',
-          '--disable-plugins',
-          '--disable-default-apps',
-          '--disable-preconnect',
-          '--disable-blink-features=AutomationControlled',
-          '--disable-web-security'
-        ],
-        ignoreHTTPSErrors: true,
-        timeout: 60000
-      }
-    });
-
-    tempClients[sessionName] = tmp;
-
-    // register some basic events for debug
-    try { if (typeof tmp.on === 'function') {
-      tmp.on('qr', (qr) => pushEvent('temp-qr', { session: sessionName, qr }));
-      tmp.on('ready', () => pushEvent('temp-ready', sessionName));
-      tmp.on('disconnected', (r) => pushEvent('temp-disconnected', { session: sessionName, r }));
-    }} catch (e) {}
-
-    // timeout: if no QR in 30s, respond with error and cleanup
-    const to = setTimeout(() => {
-      if (responded) return;
-      responded = true;
-      isGeneratingQR = false;  // Reset flag on timeout
-      try { if (typeof tmp.close === 'function') tmp.close(); } catch (e) {}
-      delete tempClients[sessionName];
-      try { res.status(500).json({ error: 'No QR generated within timeout' }); } catch (e) {}
-    }, 30000);  // Reduced from 45s to 30s
-
-    // schedule aggressive cleanup after 2 minutes (reduced from 10 min)
-    setTimeout(() => {
-      try {
-        if (tempClients[sessionName]) {
-          try { if (typeof tempClients[sessionName].close === 'function') tempClients[sessionName].close(); } catch (e) {}
-          delete tempClients[sessionName];
-          pushEvent('temp-cleaned', sessionName);
-        }
-      } catch (e) {}
-      isGeneratingQR = false;  // Reset flag after cleanup
-    }, 2 * 60 * 1000);  // Reduced from 10 min to 2 min
-
+    // Wait up to 30 seconds for the main client to capture a QR
+    let attempts = 0;
+    const maxAttempts = 60;  // 30 seconds with 500ms interval
+    
+    while (attempts < maxAttempts && !lastQr) {
+      await new Promise(r => setTimeout(r, 500));
+      attempts++;
+    }
+    
+    if (lastQr && lastQr.startsWith('data:')) {
+      const size = (lastQr.length / 1024).toFixed(2);
+      pushEvent('generate-qr-success', { source: 'main-client', sizeKB: size });
+      console.log(`✓ Returning main client QR: ${size} KB`);
+      return res.json({ ok: true, session: 'main', qr: lastQr, source: 'main-client' });
+    } else {
+      pushEvent('generate-qr-timeout', 'main client QR not available');
+      return res.status(500).json({ error: 'QR not available from main client' });
+    }
   } catch (err) {
     pushEvent('generate-qr-error', err && err.message);
-    isGeneratingQR = false;  // Reset flag on error
     res.status(500).json({ error: err && err.message });
+  } finally {
+    isGeneratingQR = false;
   }
 });
