@@ -1,11 +1,13 @@
 const statusEl = document.getElementById('status');
 const qrEl = document.getElementById('qr');
 const qrHelpEl = document.getElementById('qr-help');
+const connectBtn = document.getElementById('connectBtn');
 let qrRenderer = null;
 let prevReady = null;
 let lastEventSeenTime = null;
 let isGeneratingQR = false;  // Flag to prevent concurrent QR generation
 let qrGenerationAttempted = false;  // Flag to only try once
+let hasConnected = false;  // Flag to track if user already connected
 
 function isDisconnectHint(lastEvent, lastState) {
   try {
@@ -47,18 +49,21 @@ async function fetchStatus() {
     // handle visible transitions
     if (prevReady === true && effectiveReady === false) {
       statusEl.textContent = 'Desconectado';
-      setTimeout(() => { statusEl.textContent = 'Esperando QR / Conexión'; }, 3000);
+      connectBtn.style.display = '';
+      qrEl.innerHTML = '';
+      setTimeout(() => { statusEl.textContent = 'Presiona "Conectar WhatsApp" para escanear QR'; }, 3000);
       if (qrHelpEl) qrHelpEl.style.display = '';
     } else {
-      statusEl.textContent = effectiveReady ? 'Conexión establecida' : 'Esperando QR / Conexión';
+      statusEl.textContent = effectiveReady ? 'Conexión establecida ✓' : (hasConnected ? 'Esperando escaneo de QR...' : 'Presiona "Conectar WhatsApp" para comenzar');
     }
 
     if (effectiveReady) {
       if (qrEl) qrEl.innerHTML = '';
       if (qrHelpEl) qrHelpEl.style.display = 'none';
-    } else {
-      if (qrHelpEl) qrHelpEl.style.display = '';
+      connectBtn.style.display = 'none';  // Hide button when connected
+      hasConnected = false;
     }
+    
     prevReady = effectiveReady;
     return data.ready;
   } catch (e) {
@@ -67,47 +72,57 @@ async function fetchStatus() {
   }
 }
 
+async function requestQR() {
+  if (isGeneratingQR) {
+    console.log('Already requesting QR...');
+    return;
+  }
+  
+  hasConnected = true;
+  isGeneratingQR = true;
+  statusEl.textContent = 'Solicitando código QR...';
+  connectBtn.disabled = true;
+  connectBtn.style.opacity = '0.5';
+  
+  try {
+    const genRes = await fetch('/generate-qr');
+    const genData = await genRes.json();
+    
+    if (genData.ok && genData.qr) {
+      console.log(`✓ QR received: ${genData.qr.length} bytes`);
+      displayQr(genData.qr);
+      statusEl.textContent = 'Escanea el código QR con WhatsApp';
+      connectBtn.style.display = 'none';
+      
+      // Start polling for status to detect when connected
+      if (!window.statusInterval) {
+        window.statusInterval = setInterval(fetchStatus, 3000);
+      }
+    } else {
+      statusEl.textContent = 'Error: No se pudo generar el QR. Intenta nuevamente.';
+      connectBtn.disabled = false;
+      connectBtn.style.opacity = '1';
+    }
+  } catch (e) {
+    console.warn('Failed to request QR:', e);
+    statusEl.textContent = 'Error al solicitar QR. Intenta nuevamente.';
+    connectBtn.disabled = false;
+    connectBtn.style.opacity = '1';
+  } finally {
+    isGeneratingQR = false;
+  }
+}
+
 async function fetchQr() {
+  // This function is now only used to check for cached QR, not to generate new ones
   try {
     const res = await fetch('/qr');
     const data = await res.json();
     
-    // If no QR in cache, try to generate one (but only once and not concurrently)
-    if (!data.qr && data.status === 'waiting') {
-      if (isGeneratingQR || qrGenerationAttempted) {
-        // Already generating or already tried, just wait
-        return;
-      }
-      
-      console.log('No QR in cache, generating fresh QR...');
-      isGeneratingQR = true;
-      qrGenerationAttempted = true;
-      
-      try {
-        const genRes = await fetch('/generate-qr');
-        const genData = await genRes.json();
-        if (genData.ok && genData.qr) {
-          console.log(`✓ QR received: ${genData.qr.length} bytes`);
-          displayQr(genData.qr);
-        }
-      } catch (e) {
-        console.warn('Failed to generate QR:', e);
-        // Allow retry after 30 seconds on failure
-        setTimeout(() => { qrGenerationAttempted = false; }, 30000);
-      } finally {
-        isGeneratingQR = false;
-      }
-      return;
-    }
-    
-    // Display cached QR
+    // Display cached QR if available
     if (data.qr) {
-      console.log(`✓ QR from cache: ${data.qr.length} bytes`);
       displayQr(data.qr);
-      // Reset generation flag since we have a valid QR now
-      qrGenerationAttempted = false;
-    } else {
-      qrEl.innerHTML = '';
+      statusEl.textContent = 'Escanea el código QR con WhatsApp';
     }
   } catch (e) {
     console.warn('No QR disponible yet', e);
@@ -129,10 +144,17 @@ function displayQr(qrData) {
   }
 }
 async function init() {
+  // Setup connect button click handler
+  connectBtn.addEventListener('click', requestQR);
+  
+  // Check initial status
   await fetchStatus();
+  
+  // Check if there's already a QR cached (in case of page reload)
   await fetchQr();
-  setInterval(fetchStatus, 3000);
-  setInterval(fetchQr, 3000);
+  
+  // Only poll status, not QR (QR is requested on button click)
+  setInterval(fetchStatus, 5000);
 }
 
 init();
