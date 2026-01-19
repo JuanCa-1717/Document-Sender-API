@@ -407,16 +407,31 @@ let isGeneratingQR = false;  // Flag to prevent concurrent QR requests
 
 app.get('/generate-qr', async (req, res) => {
   console.log('📥 /generate-qr called');
-  
+  // If already connected/logged, just report ready without starting QR flow
+  if (clientReady || (clientInstance && (clientInstance.isLogged || clientInstance.connected))) {
+    pushEvent('generate-qr-skip', 'already-connected');
+    return res.json({ ok: true, ready: true, message: 'Already connected' });
+  }
+
   // Check if we already have a cached QR from the main client
   if (lastQr && lastQr.startsWith('data:')) {
     console.log('✓ Returning cached QR from main client');
     return res.json({ ok: true, session: 'main', qr: lastQr, source: 'cached' });
   }
   
+  // Avoid concurrent QR generations; wait for the current one to finish
   if (isGeneratingQR) {
     pushEvent('generate-qr-blocked', 'Already waiting for QR');
-    return res.status(429).json({ error: 'QR request already in progress' });
+    // Wait up to 10s for ongoing generation to finish
+    let waited = 0;
+    while (isGeneratingQR && waited < 10000) {
+      await new Promise(r => setTimeout(r, 200));
+      waited += 200;
+    }
+    if (lastQr && lastQr.startsWith('data:')) {
+      return res.json({ ok: true, session: 'main', qr: lastQr, source: 'cached-after-wait' });
+    }
+    if (isGeneratingQR) return res.status(429).json({ error: 'QR request already in progress' });
   }
   
   pushEvent('generate-qr-request', 'initializing-client');
@@ -426,6 +441,11 @@ app.get('/generate-qr', async (req, res) => {
     // Initialize the client if it doesn't exist
     console.log('🔍 Initializing client (if needed)...');
     await initializeClient();
+    // If initialization set us as ready, return early
+    if (clientReady || (clientInstance && (clientInstance.isLogged || clientInstance.connected))) {
+      pushEvent('generate-qr-skip', 'connected-after-init');
+      return res.json({ ok: true, ready: true, message: 'Already connected' });
+    }
     
     console.log('🔍 Client initialized, waiting for QR...');
     console.log('🔍 Client instance exists:', !!clientInstance);
@@ -436,10 +456,12 @@ app.get('/generate-qr', async (req, res) => {
       try {
         console.log('🔍 Attempting to call clientInstance.getQrCode()...');
         const qrFromClient = await clientInstance.getQrCode();
-        if (qrFromClient) {
+        if (qrFromClient && typeof qrFromClient === 'string' && qrFromClient.startsWith('data:')) {
           lastQr = qrFromClient;
           console.log('✓ Got QR directly from client:', qrFromClient.length, 'bytes');
           return res.json({ ok: true, session: 'main', qr: qrFromClient, source: 'client-method' });
+        } else if (qrFromClient) {
+          console.log('⚠ getQrCode returned unexpected data');
         }
       } catch (e) {
         console.warn('Failed to get QR from client method:', e.message);
