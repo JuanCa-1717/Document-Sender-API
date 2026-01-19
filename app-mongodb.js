@@ -24,26 +24,31 @@ let sessionsCollection;
 // Conectar a MongoDB
 async function connectMongoDB() {
   try {
+    console.log('🔄 Intentando conectar a MongoDB...');
+    console.log('URL (sin contraseña):', MONGODB_URL.replace(/\/\/[^:]+:[^@]+@/, '//*****:*****@'));
+    
     // Agregar parámetros SSL a la URL si no están
     let connectionUrl = MONGODB_URL;
     if (MONGODB_URL.includes('mongodb+srv://') && !MONGODB_URL.includes('retryWrites')) {
       const separator = MONGODB_URL.includes('?') ? '&' : '?';
-      connectionUrl = `${MONGODB_URL}${separator}retryWrites=true&w=majority&tls=true`;
+      connectionUrl = `${MONGODB_URL}${separator}retryWrites=true&w=majority`;
     }
     
     mongoClient = new MongoClient(connectionUrl, {
-      serverSelectionTimeoutMS: 15000,
+      serverSelectionTimeoutMS: 30000,
+      connectTimeoutMS: 30000,
       socketTimeoutMS: 45000,
-      maxPoolSize: 10,
-      minPoolSize: 2,
     });
     
     await mongoClient.connect();
+    await mongoClient.db("admin").command({ ping: 1 });
+    
     const db = mongoClient.db(DB_NAME);
     sessionsCollection = db.collection('sessions');
-    console.log('✅ MongoDB conectado');
+    console.log('✅ MongoDB conectado exitosamente');
   } catch (error) {
     console.error('❌ Error conectando a MongoDB:', error.message);
+    console.error('Stack completo:', error);
     process.exit(1);
   }
 }
