@@ -32,6 +32,7 @@ let lastQr = null;
 let lastState = null;
 const lastEvents = [];
 let isInitializingClient = false;  // Flag to prevent concurrent client initialization
+let isGeneratingQR = false;  // Flag to prevent concurrent QR requests
 let currentSessionName = null;     // Tracks the active session folder in /tokens
 const tokensDir = path.join(__dirname, 'tokens');
 
@@ -276,12 +277,11 @@ app.get('/qr', async (req, res) => {
     return res.json({ qr: lastQr, status: 'valid', ready: clientReady });
   }
   
-  // If no QR cached, try to generate one
-  if (!clientReady && !isGeneratingQR) {
-    console.log('No cached QR, attempting to generate...');
-    // Trigger QR generation in the background but don't wait
-    isGeneratingQR = true;
-    initializeClient().catch(err => console.error('Background QR generation error:', err));
+  // If no QR and not ready, we need to generate one
+  if (!clientReady && !isGeneratingQR && !clientInstance) {
+    console.log('No QR available. Initiating client in background...');
+    // Start client initialization but don't wait
+    initializeClient().catch(err => console.error('Background client init error:', err));
   }
   
   res.json({ qr: null, status: 'waiting', ready: clientReady, message: 'Waiting for QR generation' });
@@ -420,8 +420,6 @@ app.listen(port, host, () => {
   const baseUrl = process.env.RENDER_EXTERNAL_URL || (`http://localhost:${port}`);
   console.log(`Server listening on ${baseUrl} (bound to ${host}:${port})`);
 });
-
-let isGeneratingQR = false;  // Flag to prevent concurrent QR requests
 
 app.get('/generate-qr', async (req, res) => {
   console.log('📥 /generate-qr called');
