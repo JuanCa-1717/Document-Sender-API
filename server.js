@@ -70,7 +70,11 @@ function pushEvent(name, data) {
             '--disable-preconnect',
             '--disable-blink-features=AutomationControlled',  // Hide Puppeteer
             '--disable-web-security'           // Allow script injection (for wapi.js)
-          ]
+          ],
+          // Disable page navigation that interrupts script injection
+          ignoreHTTPSErrors: true,
+          // Increase timeout for stable page state
+          timeout: 60000
         }
       };
 
@@ -78,18 +82,37 @@ function pushEvent(name, data) {
         return await wppconnect.create(baseOptions);
       } catch (err) {
         pushEvent('create-error', err && err.message);
-        if (err && typeof err.message === 'string' && err.message.includes('already running')) {
+        const errMsg = (err && typeof err.message === 'string') ? err.message : '';
+        
+        // Retry on navigation/execution context errors (they're usually temporary)
+        if (errMsg.includes('already running')) {
           const alt = baseSession + '-' + Date.now();
           pushEvent('trying-fallback-session', alt);
           const altOptions = Object.assign({}, baseOptions, { session: alt });
           return await wppconnect.create(altOptions);
         }
+        
+        // Retry on execution context destroyed (navigation race condition)
+        if (errMsg.includes('Execution context was destroyed') || errMsg.includes('navigation')) {
+          pushEvent('retry-after-navigation-error', { attempt: 1 });
+          await new Promise(r => setTimeout(r, 3000)); // Wait 3s before retry
+          try {
+            return await wppconnect.create(baseOptions);
+          } catch (retryErr) {
+            pushEvent('retry-failed', retryErr && retryErr.message);
+            throw retryErr;
+          }
+        }
+        
         throw err;
       }
     }
 
     const client = await createClientWithFallback('whatsapp-doc-sender');
     clientInstance = client;
+
+    // Wait a moment for the page to stabilize before attaching listeners
+    await new Promise(r => setTimeout(r, 2000));
 
     lastQr = null; // Clear lastQr when client is created
     pushEvent('client-created', { type: typeof client, keys: Object.keys(client || {}).slice(0,50) });
