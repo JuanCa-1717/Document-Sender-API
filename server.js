@@ -16,6 +16,16 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
+// Clear session if DELETE_SESSION env var is set
+if (process.env.DELETE_SESSION === 'true') {
+  const sessionPath = path.join(__dirname, 'tokens', 'whatsapp-doc-sender');
+  if (fs.existsSync(sessionPath)) {
+    console.log('🗑️  Deleting old session folder...');
+    fs.rmSync(sessionPath, { recursive: true, force: true });
+    console.log('✓ Session deleted. Will create fresh session.');
+  }
+}
+
 let clientInstance = null;
 let clientReady = false;
 let lastQr = null;
