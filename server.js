@@ -31,6 +31,7 @@ let clientReady = false;
 let lastQr = null;
 let lastState = null;
 const lastEvents = [];
+let isInitializingClient = false;  // Flag to prevent concurrent client initialization
 
 function pushEvent(name, data) {
   const item = { name, data, time: new Date().toISOString() };
@@ -39,87 +40,105 @@ function pushEvent(name, data) {
   console.log(name, data || '');
 }
 
-(async () => {
-  try {
-    async function createClientWithFallback(baseSession) {
-      const baseOptions = {
-        session: baseSession,
-        useChrome: false,
-        headless: true,
-        logQR: true,                           // Enable QR logging for debugging
-        qrTimeout: 0,                          // No QR timeout (wait indefinitely for scan)
-        autoClose: 9999999,                    // Very large timeout instead of 0 (v1.37.9 bug workaround)
-        catchQR: (base64Qr, asciiQR) => {
-          console.log('🔔 catchQR CALLED with:', { type: typeof base64Qr, length: base64Qr ? base64Qr.length : 0 });
-          // Validate QR before storing
-          if (base64Qr && typeof base64Qr === 'string' && base64Qr.startsWith('data:')) {
-            lastQr = base64Qr;
-            const size = (base64Qr.length / 1024).toFixed(2);
-            pushEvent('catchQR', { session: baseSession, qr: true, sizeKB: size });
-            console.log(`✓ QR captured: ${size} KB`);
-          } else {
-            console.warn('⚠ Invalid QR format:', typeof base64Qr, base64Qr ? base64Qr.slice(0, 50) : 'null');
-            pushEvent('catchQR-invalid', { session: baseSession, type: typeof base64Qr });
-          }
-          try {
-            if (asciiQR) qrcodeTerm.generate(asciiQR, { small: true });
-          } catch (e) {
-            console.error('ASCII QR error:', e.message);
-          }
-        },
-        puppeteerOptions: {
-          args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',        // Reduce memory usage
-            '--disable-gpu',                   // Disable GPU
-            '--single-process',                // Run in single process (less memory)
-            '--no-first-run',
-            '--no-default-browser-check',
-            '--disable-extensions',
-            '--disable-plugins',
-            '--disable-default-apps',
-            '--disable-preconnect',
-            '--disable-blink-features=AutomationControlled',  // Hide Puppeteer
-            '--disable-web-security'           // Allow script injection (for wapi.js)
-          ],
-          // Disable page navigation that interrupts script injection
-          ignoreHTTPSErrors: true,
-          // Increase timeout for stable page state
-          timeout: 60000
-        }
-      };
+// Function to create client (called on-demand when user clicks "Connect")
+async function createClientWithFallback(baseSession) {
+  const baseOptions = {
+    session: baseSession,
+    useChrome: false,
+    headless: true,
+    logQR: true,                           // Enable QR logging for debugging
+    qrTimeout: 0,                          // No QR timeout (wait indefinitely for scan)
+    autoClose: 9999999,                    // Very large timeout instead of 0 (v1.37.9 bug workaround)
+    catchQR: (base64Qr, asciiQR) => {
+      console.log('🔔 catchQR CALLED with:', { type: typeof base64Qr, length: base64Qr ? base64Qr.length : 0 });
+      // Validate QR before storing
+      if (base64Qr && typeof base64Qr === 'string' && base64Qr.startsWith('data:')) {
+        lastQr = base64Qr;
+        const size = (base64Qr.length / 1024).toFixed(2);
+        pushEvent('catchQR', { session: baseSession, qr: true, sizeKB: size });
+        console.log(`✓ QR captured: ${size} KB`);
+      } else {
+        console.warn('⚠ Invalid QR format:', typeof base64Qr, base64Qr ? base64Qr.slice(0, 50) : 'null');
+        pushEvent('catchQR-invalid', { session: baseSession, type: typeof base64Qr });
+      }
+      try {
+        if (asciiQR) qrcodeTerm.generate(asciiQR, { small: true });
+      } catch (e) {
+        console.error('ASCII QR error:', e.message);
+      }
+    },
+    puppeteerOptions: {
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',        // Reduce memory usage
+        '--disable-gpu',                   // Disable GPU
+        '--single-process',                // Run in single process (less memory)
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--disable-extensions',
+        '--disable-plugins',
+        '--disable-default-apps',
+        '--disable-preconnect',
+        '--disable-blink-features=AutomationControlled',  // Hide Puppeteer
+        '--disable-web-security'           // Allow script injection (for wapi.js)
+      ],
+      // Disable page navigation that interrupts script injection
+      ignoreHTTPSErrors: true,
+      // Increase timeout for stable page state
+      timeout: 60000
+    }
+  };
 
+  try {
+    return await wppconnect.create(baseOptions);
+  } catch (err) {
+    pushEvent('create-error', err && err.message);
+    const errMsg = (err && typeof err.message === 'string') ? err.message : '';
+    
+    // Retry on navigation/execution context errors (they're usually temporary)
+    if (errMsg.includes('already running')) {
+      const alt = baseSession + '-' + Date.now();
+      pushEvent('trying-fallback-session', alt);
+      const altOptions = Object.assign({}, baseOptions, { session: alt });
+      return await wppconnect.create(altOptions);
+    }
+    
+    // Retry on execution context destroyed (navigation race condition)
+    if (errMsg.includes('Execution context was destroyed') || errMsg.includes('navigation')) {
+      pushEvent('retry-after-navigation-error', { attempt: 1 });
+      await new Promise(r => setTimeout(r, 3000)); // Wait 3s before retry
       try {
         return await wppconnect.create(baseOptions);
-      } catch (err) {
-        pushEvent('create-error', err && err.message);
-        const errMsg = (err && typeof err.message === 'string') ? err.message : '';
-        
-        // Retry on navigation/execution context errors (they're usually temporary)
-        if (errMsg.includes('already running')) {
-          const alt = baseSession + '-' + Date.now();
-          pushEvent('trying-fallback-session', alt);
-          const altOptions = Object.assign({}, baseOptions, { session: alt });
-          return await wppconnect.create(altOptions);
-        }
-        
-        // Retry on execution context destroyed (navigation race condition)
-        if (errMsg.includes('Execution context was destroyed') || errMsg.includes('navigation')) {
-          pushEvent('retry-after-navigation-error', { attempt: 1 });
-          await new Promise(r => setTimeout(r, 3000)); // Wait 3s before retry
-          try {
-            return await wppconnect.create(baseOptions);
-          } catch (retryErr) {
-            pushEvent('retry-failed', retryErr && retryErr.message);
-            throw retryErr;
-          }
-        }
-        
-        throw err;
+      } catch (retryErr) {
+        pushEvent('retry-failed', retryErr && retryErr.message);
+        throw retryErr;
       }
     }
+    
+    throw err;
+  }
+}
 
+async function initializeClient() {
+  if (clientInstance) {
+    console.log('✓ Client already initialized');
+    return clientInstance;
+  }
+  
+  if (isInitializingClient) {
+    console.log('⏳ Client initialization already in progress...');
+    // Wait for initialization to complete
+    while (isInitializingClient && !clientInstance) {
+      await new Promise(r => setTimeout(r, 500));
+    }
+    return clientInstance;
+  }
+  
+  isInitializingClient = true;
+  console.log('🚀 Initializing WhatsApp client...');
+  
+  try {
     const client = await createClientWithFallback('whatsapp-doc-sender');
     clientInstance = client;
 
@@ -199,10 +218,15 @@ function pushEvent(name, data) {
     } catch (e) {
       pushEvent('register-error', e && e.message);
     }
+    
+    return client;
   } catch (e) {
-    console.error('Fallo iniciando wppconnect:', e);
+    console.error('❌ Fallo iniciando wppconnect:', e);
+    throw e;
+  } finally {
+    isInitializingClient = false;
   }
-})();
+}
 
 // Serve the static web UI and parse JSON bodies
 app.use(express.static(path.join(__dirname, 'public')));
@@ -359,6 +383,8 @@ app.listen(port, host, () => {
 let isGeneratingQR = false;  // Flag to prevent concurrent QR requests
 
 app.get('/generate-qr', async (req, res) => {
+  console.log('📥 /generate-qr called');
+  
   // Check if we already have a cached QR from the main client
   if (lastQr && lastQr.startsWith('data:')) {
     console.log('✓ Returning cached QR from main client');
@@ -370,14 +396,18 @@ app.get('/generate-qr', async (req, res) => {
     return res.status(429).json({ error: 'QR request already in progress' });
   }
   
-  pushEvent('generate-qr-request', 'waiting-for-main-client-qr');
+  pushEvent('generate-qr-request', 'initializing-client');
   isGeneratingQR = true;
   
-  console.log('🔍 Waiting for main client to capture QR...');
-  console.log('🔍 Client instance exists:', !!clientInstance);
-  console.log('🔍 Current lastQr:', lastQr ? `${lastQr.length} bytes` : 'null');
-
   try {
+    // Initialize the client if it doesn't exist
+    console.log('🔍 Initializing client (if needed)...');
+    await initializeClient();
+    
+    console.log('🔍 Client initialized, waiting for QR...');
+    console.log('🔍 Client instance exists:', !!clientInstance);
+    console.log('🔍 Current lastQr:', lastQr ? `${lastQr.length} bytes` : 'null');
+
     // Try to get QR from client directly if it has a getQrCode method
     if (clientInstance && typeof clientInstance.getQrCode === 'function') {
       try {
