@@ -29,5 +29,5 @@ ENV NODE_ENV=production
 ENV PORT=10000
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Start app
+# Only start server.js (web UI with QR), not index.js (standalone script)
 CMD ["node", "server.js"]

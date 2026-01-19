@@ -57,7 +57,9 @@ function pushEvent(name, data) {
             '--disable-extensions',
             '--disable-plugins',
             '--disable-default-apps',
-            '--disable-preconnect'
+            '--disable-preconnect',
+            '--disable-blink-features=AutomationControlled',  // Hide Puppeteer
+            '--disable-web-security'           // Allow script injection (for wapi.js)
           ]
         }
       };
@@ -324,7 +326,9 @@ app.get('/generate-qr', async (req, res) => {
           '--disable-extensions',
           '--disable-plugins',
           '--disable-default-apps',
-          '--disable-preconnect'
+          '--disable-preconnect',
+          '--disable-blink-features=AutomationControlled',
+          '--disable-web-security'
         ]
       }
     });
