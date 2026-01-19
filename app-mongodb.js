@@ -24,12 +24,20 @@ let sessionsCollection;
 // Conectar a MongoDB
 async function connectMongoDB() {
   try {
-    mongoClient = new MongoClient(MONGODB_URL, {
-      tls: true,
-      tlsAllowInvalidCertificates: false,
-      serverSelectionTimeoutMS: 10000,
+    // Agregar parámetros SSL a la URL si no están
+    let connectionUrl = MONGODB_URL;
+    if (MONGODB_URL.includes('mongodb+srv://') && !MONGODB_URL.includes('retryWrites')) {
+      const separator = MONGODB_URL.includes('?') ? '&' : '?';
+      connectionUrl = `${MONGODB_URL}${separator}retryWrites=true&w=majority&tls=true`;
+    }
+    
+    mongoClient = new MongoClient(connectionUrl, {
+      serverSelectionTimeoutMS: 15000,
       socketTimeoutMS: 45000,
+      maxPoolSize: 10,
+      minPoolSize: 2,
     });
+    
     await mongoClient.connect();
     const db = mongoClient.db(DB_NAME);
     sessionsCollection = db.collection('sessions');
