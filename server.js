@@ -38,12 +38,21 @@ function pushEvent(name, data) {
         headless: true,
         logQR: false,
         catchQR: (base64Qr, asciiQR) => {
-          // store last QR (data:image/..;base64,...)
-          lastQr = base64Qr;
-          pushEvent('catchQR', { session: baseSession, qr: !!base64Qr });
+          // Validate QR before storing
+          if (base64Qr && typeof base64Qr === 'string' && base64Qr.startsWith('data:')) {
+            lastQr = base64Qr;
+            const size = (base64Qr.length / 1024).toFixed(2);
+            pushEvent('catchQR', { session: baseSession, qr: true, sizeKB: size });
+            console.log(`✓ QR captured: ${size} KB`);
+          } else {
+            console.warn('⚠ Invalid QR format:', typeof base64Qr, base64Qr ? base64Qr.slice(0, 50) : 'null');
+            pushEvent('catchQR-invalid', { session: baseSession, type: typeof base64Qr });
+          }
           try {
             if (asciiQR) qrcodeTerm.generate(asciiQR, { small: true });
-          } catch (e) {}
+          } catch (e) {
+            console.error('ASCII QR error:', e.message);
+          }
         },
         puppeteerOptions: {
           args: [
@@ -158,7 +167,16 @@ app.get('/status', (req, res) => {
   const lastEvent = lastEvents.length ? lastEvents[lastEvents.length - 1] : null;
   res.json({ ready: clientReady, lastState, lastQr: !!lastQr, lastEvent });
 });
-app.get('/qr', (req, res) => res.json({ qr: lastQr }));
+app.get('/qr', (req, res) => {
+  if (!lastQr) {
+    return res.json({ qr: null, status: 'waiting' });
+  }
+  if (lastQr.startsWith('data:')) {
+    return res.json({ qr: lastQr, status: 'valid' });
+  }
+  console.warn('QR format warning:', lastQr.slice(0, 50));
+  res.json({ qr: null, status: 'invalid_format', debug: lastQr.slice(0, 50) });
+});
 app.get('/debug', (req, res) => res.json({ ready: clientReady, lastState, lastQr: !!lastQr, events: lastEvents }));
 
 app.post('/send', upload.single('file'), async (req, res) => {
@@ -309,8 +327,16 @@ app.get('/generate-qr', async (req, res) => {
       catchQR: (base64Qr, asciiQR) => {
         if (!responded) {
           responded = true;
-          pushEvent('temp-catchQR', { session: sessionName });
-          try { res.json({ ok: true, session: sessionName, qr: base64Qr }); } catch (e) {}
+          if (base64Qr && typeof base64Qr === 'string' && base64Qr.startsWith('data:')) {
+            pushEvent('temp-catchQR', { session: sessionName, valid: true });
+            console.log(`✓ Temp QR captured: ${(base64Qr.length / 1024).toFixed(2)} KB`);
+            try { res.json({ ok: true, session: sessionName, qr: base64Qr }); } catch (e) {}
+          } else {
+            pushEvent('temp-catchQR', { session: sessionName, valid: false });
+            console.warn('⚠ Temp QR invalid:', typeof base64Qr);
+            try { res.json({ ok: false, error: 'Invalid QR format' }); } catch (e) {}
+            return;
+          }
           try { if (asciiQR) qrcodeTerm.generate(asciiQR, { small: true }); } catch (e) {}
         }
       },
