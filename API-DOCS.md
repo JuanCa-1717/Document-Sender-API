@@ -112,23 +112,25 @@ curl https://document-sender-api-1.onrender.com/status/mi-empresa
 ---
 
 ### POST /send/:clientId
-Envía un documento por WhatsApp.
+Envía un documento o un mensaje de texto por WhatsApp.
 
 **Parámetros (JSON):**
 ```json
 {
   "telefono": "50612345678",
   "url_documento": "https://ejemplo.com/documento.pdf",
-  "caption": "Texto opcional del mensaje"
+  "caption": "Texto del mensaje"
 }
 ```
 
 **Campos:**
-- `telefono`: Número con código de país (sin +, sin espacios)
-- `url_documento`: URL pública del documento
-- `caption`: Mensaje que acompaña al documento (opcional)
+- `telefono`: *(requerido)* Número con código de país (sin +, sin espacios)
+- `url_documento`: *(opcional)* URL pública del documento
+- `caption`: *(opcional)* Mensaje de texto
 
-**Ejemplo completo:**
+**Casos de uso:**
+
+1. **Enviar documento con caption:**
 ```bash
 curl -X POST https://document-sender-api-1.onrender.com/send/mi-empresa \
   -H "Content-Type: application/json" \
@@ -139,11 +141,31 @@ curl -X POST https://document-sender-api-1.onrender.com/send/mi-empresa \
   }'
 ```
 
+2. **Enviar solo mensaje de texto (sin documento):**
+```bash
+curl -X POST https://document-sender-api-1.onrender.com/send/mi-empresa \
+  -H "Content-Type: application/json" \
+  -d '{
+    "telefono": "50671685812",
+    "caption": "Hola, este es un mensaje de prueba"
+  }'
+```
+
 **Respuesta exitosa:**
 ```json
 {
   "estado": "enviado",
   "mensaje": "Documento enviado correctamente",
+  "id_mensaje": "3EB0C431D584B564E032",
+  "destinatario": "50671685812"
+}
+```
+
+O si es solo mensaje:
+```json
+{
+  "estado": "enviado",
+  "mensaje": "Mensaje enviado correctamente",
   "id_mensaje": "3EB0C431D584B564E032",
   "destinatario": "50671685812"
 }
@@ -181,6 +203,18 @@ Invoke-RestMethod -Method Post -Uri "https://document-sender-api-1.onrender.com/
   -Body $body
 ```
 
+**Enviar solo mensaje:**
+```powershell
+$body = @{
+    telefono = "50612345678"
+    caption = "Hola, este es mi mensaje"
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post -Uri "https://document-sender-api-1.onrender.com/send/mi-empresa" `
+  -ContentType "application/json" `
+  -Body $body
+```
+
 ---
 
 ### JavaScript (Node.js)
@@ -201,8 +235,22 @@ async function enviarDocumento(telefono, url, caption) {
   return data;
 }
 
+// Enviar solo mensaje de texto
+async function enviarMensaje(telefono, texto) {
+  const { data } = await axios.post(`${API}/send/${CLIENT_ID}`, {
+    telefono,
+    caption: texto
+  });
+  return data;
+}
+
 // Uso
 enviarDocumento('50612345678', 'https://ejemplo.com/doc.pdf', 'Hola')
+  .then(res => console.log('Enviado:', res))
+  .catch(err => console.error('Error:', err.response?.data));
+
+// O solo mensaje
+enviarMensaje('50612345678', 'Hola, ¿cómo estás?')
   .then(res => console.log('Enviado:', res))
   .catch(err => console.error('Error:', err.response?.data));
 ```
@@ -225,8 +273,19 @@ def enviar_documento(telefono, url, caption=''):
     })
     return response.json()
 
+def enviar_mensaje(telefono, texto):
+    response = requests.post(f'{API}/send/{CLIENT_ID}', json={
+        'telefono': telefono,
+        'caption': texto
+    })
+    return response.json()
+
 # Uso
 resultado = enviar_documento('50612345678', 'https://ejemplo.com/doc.pdf', 'Hola')
+print(resultado)
+
+# O solo mensaje
+resultado = enviar_mensaje('50612345678', 'Hola, ¿cómo estás?')
 print(resultado)
 ```
 
@@ -239,10 +298,28 @@ print(resultado)
 $api = 'https://document-sender-api-1.onrender.com';
 $clientId = 'mi-empresa';
 
+// Enviar documento
 $data = [
     'telefono' => '50612345678',
     'url_documento' => 'https://ejemplo.com/doc.pdf',
     'caption' => 'Tu documento'
+];
+
+$ch = curl_init("$api/send/$clientId");
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+
+$response = curl_exec($ch);
+curl_close($ch);
+
+print_r(json_decode($response, true));
+
+// Enviar solo mensaje
+$data = [
+    'telefono' => '50612345678',
+    'caption' => 'Hola, este es mi mensaje'
 ];
 
 $ch = curl_init("$api/send/$clientId");

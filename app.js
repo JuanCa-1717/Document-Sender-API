@@ -138,13 +138,13 @@ app.get('/qr/:clientId', async (req, res) => {
   res.end(imgBuffer);
 });
 
-// POST /send/:clientId - Envía documento
+// POST /send/:clientId - Envía documento o mensaje de texto
 app.post('/send/:clientId', async (req, res) => {
   const { clientId } = req.params;
   const { telefono, url_documento, caption = '' } = req.body;
 
-  if (!telefono || !url_documento) {
-    return res.status(400).json({ error: 'Faltan parámetros: telefono, url_documento' });
+  if (!telefono) {
+    return res.status(400).json({ error: 'Falta parámetro requerido: telefono' });
   }
 
   const session = sessions.get(clientId);
@@ -153,29 +153,40 @@ app.post('/send/:clientId', async (req, res) => {
   }
 
   try {
-    // Descargar documento
-    const response = await axios.get(url_documento, { responseType: 'arraybuffer' });
-    const buffer = Buffer.from(response.data);
-    const fileName = path.basename(new URL(url_documento).pathname) || 'documento.pdf';
-    const mimeType = response.headers['content-type'] || 'application/pdf';
-
     // Formatear número
     let jid = telefono.replace(/[^0-9]/g, '');
     if (!jid.includes('@')) jid += '@s.whatsapp.net';
 
-    // Enviar documento
-    const result = await session.sock.sendMessage(jid, {
-      document: buffer,
-      fileName: fileName,
-      mimetype: mimeType,
-      caption: caption
-    });
+    let result;
 
-    console.log(`✓ Documento enviado a ${telefono} (${clientId})`);
+    // Si hay documento, enviarlo
+    if (url_documento) {
+      const response = await axios.get(url_documento, { responseType: 'arraybuffer' });
+      const buffer = Buffer.from(response.data);
+      const fileName = path.basename(new URL(url_documento).pathname) || 'documento.pdf';
+      const mimeType = response.headers['content-type'] || 'application/pdf';
+
+      result = await session.sock.sendMessage(jid, {
+        document: buffer,
+        fileName: fileName,
+        mimetype: mimeType,
+        caption: caption
+      });
+
+      console.log(`✓ Documento enviado a ${telefono} (${clientId})`);
+    } else {
+      // Si no hay documento, enviar solo mensaje de texto
+      const messageText = caption || ' '; // Si caption está vacío, enviar espacio
+      result = await session.sock.sendMessage(jid, {
+        text: messageText
+      });
+
+      console.log(`✓ Mensaje enviado a ${telefono} (${clientId})`);
+    }
     
     res.json({
       estado: 'enviado',
-      mensaje: 'Documento enviado correctamente',
+      mensaje: url_documento ? 'Documento enviado correctamente' : 'Mensaje enviado correctamente',
       id_mensaje: result.key.id,
       destinatario: telefono
     });
