@@ -41,7 +41,7 @@ Document-Sender-API/
 ### 1. Clonar o descargar el proyecto
 
 ```bash
-git clone <tu-repo>
+git clone https://github.com/JuanCa-1717/Document-Sender-API.git
 cd Document-Sender-API
 ```
 
