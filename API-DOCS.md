@@ -343,7 +343,7 @@ print_r(json_decode($response, true));
 Puedes usar cualquier identificador único: tu nombre, empresa, proyecto, etc. Ejemplo: `empresa-ventas`, `cliente-123`, `juan-dev`.
 
 ### ¿El QR expira?
-No, mientras no cierres sesión en WhatsApp. Si el servidor se reinicia, la sesión se recupera automáticamente.
+No, mientras no cierres sesión en WhatsApp. Si el servidor se reinicia, la sesión se recupera automáticamente desde la base de datos SQLite.
 
 ### ¿Puedo tener múltiples clientId?
 Sí, cada `clientId` es una sesión independiente. Puedes conectar múltiples números de WhatsApp.
@@ -365,9 +365,11 @@ Ilimitados, pero respeta las políticas de WhatsApp para evitar baneos (no spam 
 ## 🔐 Seguridad
 
 - Cada `clientId` es independiente
-- Las sesiones se guardan encriptadas
+- Las sesiones se guardan encriptadas en archivos locales de Baileys
+- Los metadatos de sesión se guardan en SQLite (base de datos persistente)
 - Solo tú puedes usar tu `clientId` una vez conectado
 - Recomendado: Usar HTTPS siempre
+- ✨ **NUEVO:** Las sesiones persisten entre reinicios del servidor (disco persistente en Render)
 
 ---
 

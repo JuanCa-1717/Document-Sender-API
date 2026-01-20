@@ -6,16 +6,60 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const pino = require('pino');
+const sqlite3 = require('sqlite3');
 
 const app = express();
 app.use(express.json());
 
 const sessions = new Map(); // clientId -> { sock, qr, status, authState }
+
 // Usar disco persistente de Render si está disponible, sino usar local
-const sessionsDir = process.env.NODE_ENV === 'production' && fs.existsSync('/data') 
-  ? '/data/sessions' 
-  : path.join(__dirname, 'sessions');
+const dbDir = process.env.NODE_ENV === 'production' && fs.existsSync('/data') 
+  ? '/data' 
+  : path.join(__dirname, 'data');
+if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
+
+const sessionsDir = path.join(dbDir, 'sessions');
 if (!fs.existsSync(sessionsDir)) fs.mkdirSync(sessionsDir, { recursive: true });
+
+// Inicializar SQLite
+const dbPath = path.join(dbDir, 'sessions.db');
+const db = new sqlite3.Database(dbPath, (err) => {
+  if (err) console.error('Error abriendo BD:', err);
+  else console.log('✓ Conectado a SQLite en:', dbPath);
+});
+
+// Crear tabla de sesiones si no existe
+db.serialize(() => {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      clientId TEXT PRIMARY KEY,
+      qr TEXT,
+      status TEXT,
+      createdAt TEXT,
+      lastUpdated TEXT
+    )
+  `);
+});
+
+// Helper para ejecutar queries de forma sincrónica en callbacks
+const dbRun = (sql, params = []) => {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function(err) {
+      if (err) reject(err);
+      else resolve(this);
+    });
+  });
+};
+
+const dbGet = (sql, params = []) => {
+  return new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => {
+      if (err) reject(err);
+      else resolve(row);
+    });
+  });
+};
 
 // Logger silencioso
 const logger = pino({ level: 'silent' });
@@ -49,10 +93,22 @@ app.post('/connect/:clientId', async (req, res) => {
       if (qr) {
         qrData = await QRCode.toDataURL(qr);
         sessions.set(clientId, { sock, qr: qrData, status: 'needs-scan', authState: { state, saveCreds } });
+        // Guardar en SQLite
+        await dbRun(
+          `INSERT OR REPLACE INTO sessions (clientId, qr, status, createdAt, lastUpdated)
+           VALUES (?, ?, ?, ?, ?)`,
+          [clientId, qrData, 'needs-scan', new Date().toISOString(), new Date().toISOString()]
+        );
       }
 
       if (connection === 'open') {
         sessions.set(clientId, { sock, qr: null, status: 'connected', authState: { state, saveCreds } });
+        // Guardar en SQLite
+        await dbRun(
+          `INSERT OR REPLACE INTO sessions (clientId, qr, status, createdAt, lastUpdated)
+           VALUES (?, ?, ?, ?, ?)`,
+          [clientId, null, 'connected', new Date().toISOString(), new Date().toISOString()]
+        );
         console.log(`✓ Cliente ${clientId} conectado`);
       }
 
@@ -63,6 +119,7 @@ app.post('/connect/:clientId', async (req, res) => {
           setTimeout(() => reconnect(clientId), 3000);
         } else {
           sessions.delete(clientId);
+          await dbRun('DELETE FROM sessions WHERE clientId = ?', [clientId]);
           fs.rmSync(sessionPath, { recursive: true, force: true });
           console.log(`✗ Cliente ${clientId} desconectado (logout)`);
         }
@@ -231,6 +288,12 @@ async function reconnect(clientId) {
 
       if (connection === 'open') {
         sessions.set(clientId, { sock, qr: null, status: 'connected', authState: { state, saveCreds } });
+        // Guardar en SQLite
+        await dbRun(
+          `INSERT OR REPLACE INTO sessions (clientId, qr, status, createdAt, lastUpdated)
+           VALUES (?, ?, ?, ?, ?)`,
+          [clientId, null, 'connected', new Date().toISOString(), new Date().toISOString()]
+        );
         console.log(`✓ Cliente ${clientId} reconectado`);
       }
 
@@ -250,10 +313,19 @@ async function reconnect(clientId) {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 API WhatsApp escuchando en puerto ${PORT}`);
+  console.log(`� Base de datos SQLite: ${dbPath}`);
   console.log(`📡 Endpoints:`);
   console.log(`   POST /connect/:clientId  - Conectar y obtener QR`);
   console.log(`   GET  /qr/:clientId       - Ver QR en navegador`);
   console.log(`   GET  /connect/:clientId  - Verificar estado`);
   console.log(`   POST /send/:clientId     - Enviar documento`);
   console.log(`   GET  /status/:clientId   - Estado conexión`);
+});
+
+// Cerrar BD al terminar
+process.on('SIGINT', () => {
+  db.close(() => {
+    console.log('\n📊 Base de datos cerrada');
+    process.exit(0);
+  });
 });
