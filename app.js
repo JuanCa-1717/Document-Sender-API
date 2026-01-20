@@ -64,6 +64,48 @@ const dbGet = (sql, params = []) => {
 // Logger silencioso
 const logger = pino({ level: 'silent' });
 
+// Función para restaurar sesiones al iniciar
+async function restoreSessions() {
+  console.log('🔄 Restaurando sesiones previas...');
+  
+  return new Promise((resolve, reject) => {
+    db.all('SELECT clientId, status FROM sessions WHERE status = ?', ['connected'], async (err, rows) => {
+      if (err) {
+        console.error('Error restaurando sesiones:', err);
+        return resolve();
+      }
+
+      if (!rows || rows.length === 0) {
+        console.log('✓ No hay sesiones previas para restaurar');
+        return resolve();
+      }
+
+      console.log(`📦 Encontradas ${rows.length} sesión(es) para restaurar`);
+
+      for (const row of rows) {
+        try {
+          const { clientId } = row;
+          const sessionPath = path.join(sessionsDir, clientId);
+          
+          // Verificar si existen archivos de sesión
+          if (!fs.existsSync(sessionPath)) {
+            console.log(`⚠️  No hay archivos para ${clientId}, omitiendo...`);
+            continue;
+          }
+
+          console.log(`🔌 Reconectando ${clientId}...`);
+          await reconnect(clientId);
+        } catch (error) {
+          console.error(`Error restaurando ${row.clientId}:`, error.message);
+        }
+      }
+
+      console.log('✓ Restauración completada');
+      resolve();
+    });
+  });
+}
+
 // POST /connect/:clientId - Genera conexión y devuelve QR
 app.post('/connect/:clientId', async (req, res) => {
   const { clientId } = req.params;
@@ -311,15 +353,22 @@ async function reconnect(clientId) {
 }
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🚀 API WhatsApp escuchando en puerto ${PORT}`);
-  console.log(`� Base de datos SQLite: ${dbPath}`);
+  console.log(`💾 Base de datos SQLite: ${dbPath}`);
   console.log(`📡 Endpoints:`);
   console.log(`   POST /connect/:clientId  - Conectar y obtener QR`);
   console.log(`   GET  /qr/:clientId       - Ver QR en navegador`);
   console.log(`   GET  /connect/:clientId  - Verificar estado`);
   console.log(`   POST /send/:clientId     - Enviar documento`);
   console.log(`   GET  /status/:clientId   - Estado conexión`);
+  
+  // Restaurar sesiones después de iniciar el servidor
+  try {
+    await restoreSessions();
+  } catch (error) {
+    console.error('Error en restauración de sesiones:', error);
+  }
 });
 
 // Cerrar BD al terminar
