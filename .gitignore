@@ -2,6 +2,7 @@ node_modules/
 
 # Documentation (contains sensitive examples)
 API-DOCS.md
+README-CLIENT.md
 
 # Sensitive runtime data
 uploads/
