@@ -135,7 +135,7 @@ Envía un documento o un mensaje de texto por WhatsApp.
 curl -X POST https://document-sender-api-1.onrender.com/send/mi-empresa \
   -H "Content-Type: application/json" \
   -d '{
-    "telefono": "50671685812",
+    "telefono": "50612345678",
     "url_documento": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
     "caption": "Documento importante"
   }'
@@ -146,7 +146,7 @@ curl -X POST https://document-sender-api-1.onrender.com/send/mi-empresa \
 curl -X POST https://document-sender-api-1.onrender.com/send/mi-empresa \
   -H "Content-Type: application/json" \
   -d '{
-    "telefono": "50671685812",
+    "telefono": "50612345678",
     "caption": "Hola, este es un mensaje de prueba"
   }'
 ```
@@ -157,7 +157,7 @@ curl -X POST https://document-sender-api-1.onrender.com/send/mi-empresa \
   "estado": "enviado",
   "mensaje": "Documento enviado correctamente",
   "id_mensaje": "3EB0C431D584B564E032",
-  "destinatario": "50671685812"
+  "destinatario": "50612345678"
 }
 ```
 
@@ -167,7 +167,7 @@ O si es solo mensaje:
   "estado": "enviado",
   "mensaje": "Mensaje enviado correctamente",
   "id_mensaje": "3EB0C431D584B564E032",
-  "destinatario": "50671685812"
+  "destinatario": "50612345678"
 }
 ```
 

@@ -11,6 +11,26 @@ const sqlite3 = require('sqlite3');
 const app = express();
 app.use(express.json());
 
+// Middleware de autenticación
+const apiKeyAuth = (req, res, next) => {
+  const apiKey = req.headers['x-api-key'];
+  const validApiKey = process.env.API_KEY;
+
+  if (!validApiKey) {
+    console.warn('⚠️  Advertencia: API_KEY no está configurada en variables de entorno');
+    return next(); // Permitir si no está configurada (desarrollo)
+  }
+
+  if (!apiKey || apiKey !== validApiKey) {
+    return res.status(401).json({ 
+      error: 'No autorizado', 
+      mensaje: 'API Key inválida o faltante' 
+    });
+  }
+
+  next();
+};
+
 const sessions = new Map(); // clientId -> { sock, qr, status, authState }
 
 // Usar disco persistente de Render si está disponible, sino usar local
@@ -107,7 +127,7 @@ async function restoreSessions() {
 }
 
 // POST /connect/:clientId - Genera conexión y devuelve QR
-app.post('/connect/:clientId', async (req, res) => {
+app.post('/connect/:clientId', apiKeyAuth, async (req, res) => {
   const { clientId } = req.params;
   
   try {
@@ -238,7 +258,7 @@ app.get('/qr/:clientId', async (req, res) => {
 });
 
 // POST /send/:clientId - Envía documento o mensaje de texto
-app.post('/send/:clientId', async (req, res) => {
+app.post('/send/:clientId', apiKeyAuth, async (req, res) => {
   const { clientId } = req.params;
   const { telefono, url_documento, caption = '' } = req.body;
 
@@ -300,7 +320,7 @@ app.post('/send/:clientId', async (req, res) => {
 });
 
 // GET /status/:clientId - Estado de la conexión
-app.get('/status/:clientId', (req, res) => {
+app.get('/status/:clientId', apiKeyAuth, (req, res) => {
   const { clientId } = req.params;
   const session = sessions.get(clientId);
 
